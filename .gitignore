@@ -1,0 +1,30 @@
+# Xcode user data
+xcuserdata/
+DerivedData/
+build/
+
+# SwiftPM artifacts
+.build/
+
+# CocoaPods (if you ever add it)
+Pods/
+
+# Carthage (if ever used)
+Carthage/Build/
+
+# Fastlane / Reports
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+
+# Firebase / GoogleService (keep OUT of public repo if private keys present)
+GoogleService-Info.plist
+
+# Secrets (if any)
+Secrets.swift
+
+# Crash logs
+*.crash
+
+# Misc
+.DS_Store
