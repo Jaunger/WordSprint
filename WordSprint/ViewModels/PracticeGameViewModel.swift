@@ -110,81 +110,88 @@ func randomSeed(using gk: GKRandom = GKRandomSource.sharedRandom()) -> String {
     return finalResult
 }
 
-//-------------------------------------------------------------------------
-// Much better playability check with realistic expectations
-//-------------------------------------------------------------------------
-func playableSeed(using gk: GKRandom = GKRandomSource.sharedRandom(),
-                  attemptCap: Int = 200,
-                  minWordCount: Int = 12) -> String {
 
-    var bestCandidate = ""
-    var bestScore = 0
+// MARK: Tuned seed scoring
+private let scoringDepthLimit: Int? = 7   // shallow enumeration for speed
 
-    for attempt in 0..<attemptCap {
-        let s = randomSeed(using: gk)
+private struct SeedEval {
+    let seed: String
+    let wordCount: Int
+    let longCount: Int
+    let uniqueStarts: Int
+    let avgLen: Double
+    let duplicatePenalty: Int
+    var score: Double {
+        Double(wordCount) * 4.5 +
+        Double(longCount) * 7.0 +
+        Double(uniqueStarts) * 2.2 +
+        avgLen * 1.2 -
+        Double(duplicatePenalty) * 3.0
+    }
+}
 
-        // Basic sanity checks
-        let vowels = s.filter { "AEIOU".contains($0) }.count
-        let uniqueLetters = Set(s).count
-        
-        // More realistic constraints
-        guard vowels >= 3 && vowels <= 8,     // Reasonable vowel count
-              uniqueLetters >= 8              // Enough variety
-        else { continue }
+/// Deterministic variant (pass a GKRandom)
+func playableSeed<R: GKRandom>(
+    using gk: R,
+    attempts: Int = 140,
+    earlyAcceptWordCount: Int = 34
+) -> String {
 
-        // First decent grid is our fallback
-        if bestCandidate.isEmpty { bestCandidate = s }
+    var best: SeedEval?
 
-        let wordCount = WordFinder.shared.words(in: s).count
-        
-        // Print more details for first few attempts
-        if attempt < 5 {
-            let words = WordFinder.shared.words(in: s)
-            print("Attempt \(attempt + 1): Seed \(s) ⇒ \(wordCount) words")
-            if wordCount > 0 {
-                print("  Words found: \(words.sorted().prefix(10))")
-            }
+    for _ in 0..<attempts {
+        // reuse your dice-based generator
+        let seed = randomSeed(using: gk)
+
+        // Cheap constraints
+        let freq = Dictionary(grouping: seed, by: { $0 }).mapValues(\.count)
+        if freq.values.contains(where: { $0 > 4 }) { continue }
+        let vowels = seed.filter { "AEIOU".contains($0) }.count
+        if !(4...7).contains(vowels) { continue }
+        if freq.count < 9 { continue }
+        let rares = seed.filter { "QJXZ".contains($0) }
+        if Set(rares).count > 2 { continue }
+
+        // Depth-limited words
+        let words = WordFinder.shared.words(in: seed, depthLimit: scoringDepthLimit)
+        let total = words.count
+        if total == 0 { continue }
+
+        let longCount = words.filter { $0.count >= 5 }.count
+        let starts = Set(words.compactMap(\.first))
+        let avgLen = Double(words.reduce(0) { $0 + $1.count }) / Double(total)
+        let dupPenalty = freq.values.reduce(0) { $0 + max(0, $1 - 2) }
+
+        if total >= earlyAcceptWordCount {
+            return seed
+        }
+
+        let eval = SeedEval(seed: seed,
+                            wordCount: total,
+                            longCount: longCount,
+                            uniqueStarts: starts.count,
+                            avgLen: avgLen,
+                            duplicatePenalty: dupPenalty)
+
+        if let b = best {
+            if eval.score > b.score { best = eval }
         } else {
-            print("Attempt \(attempt + 1): Seed \(s) ⇒ \(wordCount) words")
-        }
-
-        if wordCount >= minWordCount { return s }
-        
-        if wordCount > bestScore {
-            bestScore = wordCount
-            bestCandidate = s
+            best = eval
         }
     }
-    
-    print("Best found after \(attemptCap) attempts: \(bestCandidate) with \(bestScore) words")
-    return bestCandidate
+
+    return best?.seed ?? randomSeed(using: gk)
 }
 
-//-------------------------------------------------------------------------
-// Generate multiple grids and pick the best
-//-------------------------------------------------------------------------
-func bestOfMultipleGrids(count: Int = 50, using gk: GKRandom = GKRandomSource.sharedRandom()) -> String {
-    var bestGrid = ""
-    var bestScore = 0
-    
-    for i in 0..<count {
-        let grid = randomSeed(using: gk)
-        let wordCount = WordFinder.shared.words(in: grid).count
-        
-        if wordCount > bestScore {
-            bestScore = wordCount
-            bestGrid = grid
-        }
-        
-        if i % 10 == 0 {
-            print("Generated \(i) grids, best so far: \(bestScore) words")
-        }
-    }
-    
-    print("Final best grid: \(bestGrid) with \(bestScore) words")
-    return bestGrid
+/// Convenience random variant (practice)
+func playableSeed(
+    attempts: Int = 120,
+    earlyAcceptWordCount: Int = 34
+) -> String {
+    playableSeed(using: GKRandomSource.sharedRandom(),
+                      attempts: attempts,
+                      earlyAcceptWordCount: earlyAcceptWordCount)
 }
-
 //-------------------------------------------------------------------------
 // Debug function to verify dice work correctly
 //-------------------------------------------------------------------------
@@ -233,39 +240,118 @@ func testDiceDistribution() {
 //-------------------------------------------------------------------------
 // 4. Practice-mode ViewModel
 //-------------------------------------------------------------------------
+
 final class PracticeGameViewModel: GameViewModel {
+    private static var cachedSeed: String?
+    private var isReloading = false
+    private var suppressSummaryOnce = false
+    @Published private(set) var loadingSeed = false
+    private var isGenerating = false
+    private let practiceDuration = 90
 
     init() {
-        super.init(seed: GridSeed(seed: "ABCDEFGHIJKLMNOP"))  // placeholder
-        Task.detached(priority: .background) {
-            let seed = playableSeed()                   // runs off-main
-            await MainActor.run { [weak self] in
-                self?.inject(seed: seed)
+        if let cached = Self.cachedSeed {
+            // We already have a board — don’t generate again
+            super.init(seed: GridSeed(seed: cached), isPractice: true)
+        } else {
+            // First time ever: show placeholder and go fetch
+            super.init(seed: GridSeed(seed: "################"), isPractice: true)
+            suspendForReload()
+            loadingSeed = true
+            generate(cacheResult: true)
+        }
+    }
+
+    func newBoard() {
+        // only one reload at a time
+        guard !loadingSeed else { return }
+        loadingSeed = true
+        isReloading = true
+        Self.cachedSeed = nil           // clear cache to allow generate
+        suspendForReload()
+        setSeed(d: GridSeed(seed: "################"))
+        generate(cacheResult: true)
+    }
+
+    private func generate(cacheResult: Bool) {
+        // bail if we’re already mid-generate
+        guard !isGenerating else { return }
+        isGenerating = true
+
+        Task.detached(priority: .userInitiated) {
+            let seedString = playableSeed()
+            let seed = GridSeed(seed: seedString)
+            await MainActor.run {
+                if cacheResult {
+                    Self.cachedSeed = seedString
+                }
+                self.isReloading = false
+                self.loadingSeed = false
+                self.reset(with: seed, time: self.practiceDuration)
+                self.isGenerating = false      // allow future generates (via newBoard)
             }
         }
     }
 
-    /// Swap in the real board & restart timer (MainActor context)
-    @MainActor private func inject(seed seedString: String) {
-        grid       = GridSeed(seed: seedString).grid
-        selected   = []
-        accepted   = []
-        score      = 0
-        timeLeft   = 90
-        isFinished = false
-        startTimer()
-    }
-
-    // Skip Firestore; update local practice PB
     override func finishGame() {
-        isFinished = true
-        timerCancellable?.cancel()     // note: `fileprivate` in base class
+        if isFinished { return }
+        let prevSuppress = suppressFinishEffects
+        super.finishGame()          // base handles sound/summary if not suppressed
 
+        // Practice-only PB (after base sets isFinished)
         let best = UserDefaults.standard.integer(forKey: "practiceBest")
-        if score > best {
-            UserDefaults.standard.set(score, forKey: "practiceBest")
+        if score > best { UserDefaults.standard.set(score, forKey: "practiceBest") }
+
+        Task {
+            let nick = Nickname.current
+            let practiceGrant = XPGrant(amount: score * 10, key: "practice")
+
+            _ = await XPService.award(practiceGrant, to: nick)
         }
-        showSummary = true
-        Haptics.notify.notificationOccurred(.success)
+        
+        // If we suppressed, also clear showSummary just in case base set it
+        if prevSuppress {
+            showSummary = false
+        }
     }
 }
+
+// MARK: Depth-limited evaluation support (extension for WordFinder)
+extension WordFinder {
+    func words(in seed: String, depthLimit: Int?) -> Set<String> {
+        guard seed.count == 16 else { return [] }
+        let grid = Array(seed)
+        var results = Set<String>(), visited = Array(repeating: false, count: 16)
+        var buffer = [Character]()
+
+        func dfs(_ idx: Int, _ node: Node) {
+            visited[idx] = true
+            buffer.append(grid[idx])
+            if node.isWord { results.insert(String(buffer)) }
+            if let limit = depthLimit, buffer.count >= limit {
+                visited[idx] = false
+                buffer.removeLast()
+                return
+            }
+            let (r, c) = (idx / 4, idx % 4)
+            for dr in -1...1 {
+                for dc in -1...1 where !(dr == 0 && dc == 0) {
+                    let nr = r + dr, nc = c + dc
+                    guard (0..<4).contains(nr), (0..<4).contains(nc) else { continue }
+                    let nIdx = nr * 4 + nc
+                    guard !visited[nIdx] else { continue }
+                    if let next = trie.children[grid[nIdx]] { dfs(nIdx, next) }
+                }
+            }
+            visited[idx] = false
+            buffer.removeLast()
+        }
+
+        for i in 0..<16 {
+            if let first = trie.children[grid[i]] { dfs(i, first) }
+        }
+        return results
+    }
+}
+
+

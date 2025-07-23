@@ -42,7 +42,6 @@ enum FSService {
     static func fetchTodaySeed(fallbackToYesterday: Bool = false) async throws -> GridSeed {
         let todayID = dateID(Date())
         if let seed = try await getSeed(docID: todayID) { return seed }
-
         guard fallbackToYesterday,
               let ySeed = try await getSeed(docID: dateID(-86400)) else {
             throw NSError(domain: "SeedMissing", code: 0,
@@ -117,15 +116,15 @@ enum FSService {
 
     /// Deterministic 16-letter seed for a given date
     static func dailySeedString(for date: Date) -> String {
-        let id = dayFormatter.string(from: date)
-        let arc4  = GKARC4RandomSource(seed: id.data(using: .utf8)!)
-        // use *your* playableSeed() so grids are nice
-        return playableSeed(using: arc4)
+        let id = dayFormatter.string(from: date)                 // yyyyMMdd
+        let arc4 = GKARC4RandomSource(seed: id.data(using: .utf8)!)
+        // Use tunedPlayableSeed with deterministic ARC4
+        return playableSeed(using: arc4,
+                                 attempts: 110,
+                                 earlyAcceptWordCount: 32)
     }
     
-    static func dailyGridSeed(for date: Date) -> GridSeed {
-        GridSeed(seed: dailySeedString(for: date))
-    }
+
 }
 
 private let dayFormatter: DateFormatter = {
@@ -140,5 +139,57 @@ extension Date {
         let w   = cal.component(.weekOfYear,        from: self)
         let y   = cal.component(.yearForWeekOfYear, from: self)
         return String(format: "%04d-W%02d", y, w)   // 2025-W29
+    }
+}
+
+enum ILTime {
+    static let tz = TimeZone(identifier: "Asia/Jerusalem")!
+
+    static var cal: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = tz
+        return c
+    }
+
+    static func startOfTomorrow() -> Date {
+        cal.date(byAdding: .day, value: 1, to: startOfToday())!
+    }
+    static func secondsUntilTomorrow() -> Int {
+        max(Int(startOfTomorrow().timeIntervalSinceNow), 0)
+    }
+    static func startOfToday() -> Date {
+        cal.startOfDay(for: Date())
+    }
+
+}
+
+func hhmmss(_ secs: Int) -> String {
+    let h = secs / 3600
+    let m = (secs % 3600) / 60
+    let s = secs % 60
+    return String(format: "%02d:%02d:%02d", h, m, s)
+}
+
+enum LocalNotifs {
+    static func requestPermissionIfNeeded() {
+        UNUserNotificationCenter.current().getNotificationSettings { set in
+            guard set.authorizationStatus == .notDetermined else { return }
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert,.sound,.badge]) { _,_ in }
+        }
+    }
+
+    static func scheduleNextDailyReminder() {
+        let fireDate = ILTime.startOfTomorrow()
+        var comps = Calendar.current.dateComponents([.year,.month,.day,.hour,.minute,.second], from: fireDate)
+        comps.timeZone = ILTime.tz
+
+        let content = UNMutableNotificationContent()
+        content.title = "New WordSprint puzzle!"
+        content.body  = "Your next daily is ready. Come play 🎉"
+        content.sound = .default
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+        let req = UNNotificationRequest(identifier: "dailyReady", content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
     }
 }

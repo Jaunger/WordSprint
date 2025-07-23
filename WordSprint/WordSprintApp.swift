@@ -15,6 +15,9 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct WordSprintApp: App {
     @StateObject private var tm = ThemeManager()
+    @StateObject private var sm  = SoundManager.shared
+    @StateObject private var router = NavRouter()
+
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     init() {
         DictionaryService.load()
@@ -23,8 +26,16 @@ struct WordSprintApp: App {
         WindowGroup {
             NavigationStack {
                 HomeView()
-                    .environmentObject(tm)  
+                    .environmentObject(router)
+                    .environmentObject(tm)
+                    .environmentObject(sm)
+                    .accentColor(tm.theme.accent)
             }
         }
     }
+}
+
+final class NavRouter: ObservableObject {
+    @Published var path = NavigationPath()
+    func popToRoot() { path = NavigationPath() }
 }

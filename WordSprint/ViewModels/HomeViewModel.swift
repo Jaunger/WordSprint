@@ -8,28 +8,49 @@
 
 import Foundation
 
-@Observable final class HomeViewModel {
+@Observable
+final class HomeViewModel : ObservableObject{
     private(set) var dailySeed: GridSeed?
     private(set) var loading  = true
     private(set) var errorMessage: String?
+    private(set) var seedError: String?
+    private var loadingProfile: Bool = false
+    private var didLoadProfile: Bool = false
     var profile: PlayerProfile?
 
     init() {
-        Task { await fetchSeed() }
+        Task { await fetchSeed()}
+            Task { await loadProfile(force: true) }
+        
     }
     
-    func loadProfile() {
-        Task {
-            profile = try? await ProfileService.load(for: Nickname.current)
+    
+    func loadProfile(force: Bool = false) async {
+        if didLoadProfile && !force { return }
+        loadingProfile = true
+        do {
+            profile = try await ProfileService.load(for: Nickname.current)
+            didLoadProfile = true
+        } catch {
+            errorMessage = error.localizedDescription
         }
+        loadingProfile = false
     }
 
-    @MainActor private func fetchSeed() async {
+    /// Force-refresh just nickname on Firestore
+    func reloadProfileNick(_ newNick: String) async {
+        didLoadProfile = false
+        await loadProfile(force: true)
+    }
+
+    @MainActor func fetchSeed() async {
         do {
             dailySeed = try await FSService.fetchTodaySeed()   // normal path
             loading = false
         } catch {
-            let generated = FSService.dailyGridSeed(for: Date())
+            let generated = GridSeed(seed: FSService.dailySeedString(for: Date()))
+            
+            print(generated)
             do {
                 try await FSService.writeTodaySeed(generated)  // might fail if race
                 print("🌐 Uploaded new daily seed")
@@ -41,12 +62,4 @@ import Foundation
         }
     }
     
-    @MainActor
-    func reloadProfileNick(_ newNick: String) async {
-        // local profile already loaded?
-        if let prof = profile {
-            try? await ProfileService.save(prof, for: newNick)   // move doc
-            profile = prof                                       // refresh binding
-        }
-    }
 }

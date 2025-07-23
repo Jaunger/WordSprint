@@ -51,8 +51,8 @@ final class WordFinder {
 
     // MARK: - Private trie
     // MARK: - Private trie
-    private class Node { var children = [Character: Node](); var isWord = false }
-    private let trie = Node()
+    class Node { var children = [Character: Node](); var isWord = false }
+    let trie = Node()
 
     private func buildTrie() {
         guard !DictionaryService.wordSet.isEmpty else {

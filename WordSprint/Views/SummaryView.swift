@@ -11,6 +11,10 @@ import SwiftUI
 struct SummaryView: View {
     let score: Int
     let words: [String]
+    @EnvironmentObject private var tm: ThemeManager
+    @Environment(\.dismiss) private var dismiss
+    let onHome: () -> Void
+
 
     var body: some View {
         VStack(spacing: 16) {
@@ -21,9 +25,26 @@ struct SummaryView: View {
 
             NavigationLink("Leaderboard") {
                 LeaderboardView()
+                    .environmentObject(tm)
             }
             .buttonStyle(.borderedProminent)
         }
         .padding()
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    onHome() 
+                } label: {
+                    HStack {
+                        Image(systemName: "chevron.left")
+                        Text("Home")
+                    }
+                }
+            }
+        }
+
+        }
+
     }
-}
+
