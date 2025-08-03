@@ -2,18 +2,16 @@ import SwiftUI
 
 struct LeaderboardView: View {
     @StateObject private var vm = LeaderboardViewModel()
-    @EnvironmentObject private var tm: ThemeManager   // (optional theming)
+    @EnvironmentObject private var tm: ThemeManager
 
     var body: some View {
-        GeometryReader { geo in
+        GeometryReader { _ in
             ScrollViewReader { _ in
                 ZStack(alignment: .top) {
-                    // Main vertical stack fills height so we can pin top
                     VStack(spacing: 16) {
 
                         scopePicker
 
-                        // Content area (fills remaining vertical space, aligns top)
                         Group {
                             if let err = vm.errorMessage, !vm.loading {
                                 errorState(err)
@@ -29,6 +27,7 @@ struct LeaderboardView: View {
                     .frame(maxWidth: .infinity,
                            maxHeight: .infinity,
                            alignment: .top)
+                    .foregroundColor(tm.theme.text)
 
                     if vm.loading {
                         ProgressView()
@@ -49,19 +48,25 @@ struct LeaderboardView: View {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 0) {
                     Text(vm.title).font(.headline)
+                        .foregroundColor(tm.theme.text)
                     if !vm.weekSubtitle.isEmpty {
                         Text(vm.weekSubtitle)
-                            .font(.caption2).foregroundStyle(.secondary)
+                            .font(.caption2)
+                            .foregroundStyle(tm.theme.text.opacity(0.6))
                     }
                 }
             }
         }
+        .tint(tm.theme.accent)
         .navigationBarTitleDisplayMode(.inline)
         .task { await vm.initialLoad() }
         .refreshable { await vm.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: .scoreSubmitted)) { _ in
+            Task { await vm.refresh() }
+        }
         .animation(.easeInOut(duration: 0.25), value: vm.loading)
         .animation(.default, value: vm.reloadToken)
-        .background(tm.theme.background.ignoresSafeArea())   // optional theme
+        .background(tm.theme.background.ignoresSafeArea())
     }
 
     // MARK: - Subviews
@@ -70,13 +75,13 @@ struct LeaderboardView: View {
         VStack(alignment: .leading, spacing: 8) {
 
             if let rank = vm.myRank, let myScore = vm.myScore {
-                // Rank chip on top (optional)
                 HStack {
                     Text("You: #\(rank) • \(myScore) pts")
                         .font(.footnote.weight(.semibold))
+                        .foregroundColor(tm.theme.text)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(Capsule().fill(.thinMaterial))
+                        .background(Capsule().fill(tm.theme.tile.opacity(0.15)))
                     Spacer()
                 }
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -91,22 +96,24 @@ struct LeaderboardView: View {
                     Text(s.rawValue).tag(s)
                 }
             }
+            .tint(tm.theme.accent)
             .pickerStyle(.segmented)
             .padding(.horizontal)
         }
     }
 
     private var scoreList: some View {
-        // Only show list when we have entries (or loading, but loading overlays spinner)
         List {
             ForEach(Array(vm.entries.enumerated()), id: \.1.id) { index, entry in
                 LeaderRow(index: index, entry: entry)
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                     .listRowSeparator(.hidden)
+                    .listRowBackground(tm.theme.listBG)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
         .scrollContentBackground(.hidden)
+        .background(tm.theme.listBG)
         .listStyle(.plain)
         .frame(minHeight: 0, maxHeight: .infinity)
     }
@@ -118,12 +125,13 @@ struct LeaderboardView: View {
                 .foregroundColor(.orange)
             Text(message)
                 .multilineTextAlignment(.center)
+                .foregroundColor(tm.theme.text)
             Button {
                 Task { await vm.refresh() }
             } label: {
                 Label("Retry", systemImage: "arrow.clockwise")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(ThemedButtonStyle(prominent: true))
         }
         .padding(.top, 40)
         .padding(.horizontal)
@@ -133,18 +141,18 @@ struct LeaderboardView: View {
         VStack(spacing: 10) {
             Image(systemName: "trophy")
                 .font(.largeTitle)
-                .foregroundColor(.secondary)
+                .foregroundColor(tm.theme.text.opacity(0.4))
             Text(vm.emptyMessage)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(tm.theme.text.opacity(0.6))
         }
         .padding(.top, 40)
     }
 }
 
-// MARK: - Row (unchanged from last version)
 private struct LeaderRow: View {
     let index: Int
     let entry: ScoreEntry
+    @EnvironmentObject private var tm: ThemeManager
 
     var medal: String? {
         switch index {
@@ -163,17 +171,18 @@ private struct LeaderRow: View {
             } else {
                 Text("#\(index + 1)")
                     .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(tm.theme.text.opacity(0.6))
                     .frame(width: 34, alignment: .leading)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.nick)
                     .fontWeight(.semibold)
+                    .foregroundColor(tm.theme.text)
                     .lineLimit(1)
                 Text("\(entry.score) pts")
                     .font(.footnote.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(tm.theme.text.opacity(0.6))
                     .contentTransition(.numericText())
             }
 
@@ -181,13 +190,13 @@ private struct LeaderRow: View {
 
             if entry.nick == Nickname.current {
                 Image(systemName: "person.fill.checkmark")
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(tm.theme.accent)
             }
         }
         .padding(.vertical, 4)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(.secondary.opacity(index < 3 ? 0.08 : 0.04))
+                .fill(tm.theme.tile.opacity(index < 3 ? 0.10 : 0.05))
         )
     }
 }

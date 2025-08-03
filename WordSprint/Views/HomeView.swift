@@ -1,21 +1,27 @@
 import SwiftUI
-import FirebaseFirestore           // for profile save
+import FirebaseFirestore
 
-/* MARK: - HomeView */
 struct HomeView: View {
-    // ───────────────── internal state
-    @State private var vm          = HomeViewModel()
+    @StateObject private var vm    = HomeViewModel()
     @State private var editingNick = false
     @State private var draftNick   = Nickname.current
     @State private var showThemes  = false
-    @State private var justLeveledTo: Int?
 
 
-    // ───────────────── injected
     @EnvironmentObject private var tm: ThemeManager
     @EnvironmentObject private var sm: SoundManager
     @EnvironmentObject private var router: NavRouter
 
+    @AppStorage("lastSeenLevel") private var lastSeenLevel: Int = 0
+    
+    private func considerShowingLevelUp() {
+        guard let p = vm.profile else { return }
+        if p.level > lastSeenLevel {
+            vm.pendingLevelUp = p.level
+            lastSeenLevel     = p.level
+        }
+    }
+    
     var body: some View {
         NavigationStack (path:$router.path) {
             Group {
@@ -42,6 +48,8 @@ struct HomeView: View {
             }
             .task {                                  
                 await vm.loadProfile(force: true)
+                
+                considerShowingLevelUp()
             }
             .soundToolbarItem()
             .padding()
@@ -49,25 +57,31 @@ struct HomeView: View {
 
         .background(tm.theme.background.ignoresSafeArea())
         .onReceive(NotificationCenter.default.publisher(for: .xpChanged)) { _ in
-            Task { await vm.loadProfile(force: true) }
+            Task { await vm.loadProfile(force: true)
+                considerShowingLevelUp()}
+            
         }
         .onReceive(NotificationCenter.default.publisher(for: .leveledUp)) { note in
-            if let new = note.userInfo?["new"] as? Int {
-                justLeveledTo = new
-                Task { await vm.loadProfile(force: true) }
-            }
+                if let new = note.userInfo?["new"] as? Int {
+                   vm.pendingLevelUp = new
+                    lastSeenLevel = max(lastSeenLevel, new)
+            
+                    Task {
+                        await vm.loadProfile(force: true)
+                        considerShowingLevelUp()
+                  }
+               }
         }
         .overlay(alignment: .top) {
-            if let lvl = justLeveledTo {
+            if let lvl = vm.pendingLevelUp {
                 LevelUpBanner(level: lvl)
                     .transition(.opacity)
+                    .onDisappear { vm.pendingLevelUp = nil }
             }
         }
-
     }
 }
 
-// MARK: - Main menu
 private extension HomeView {
     @ViewBuilder
     func mainMenu(seed: GridSeed) -> some View {
@@ -83,7 +97,7 @@ private extension HomeView {
                         Image(systemName: "pencil")
                     }
                     .font(.callout.weight(.semibold))
-                    .foregroundColor(tm.theme.buttonText)
+                    .foregroundColor(tm.theme.text)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
    
@@ -91,7 +105,7 @@ private extension HomeView {
                 Spacer()
                 Button("Theme") { showThemes = true }
                     .font(.callout.weight(.semibold))
-                    .foregroundColor(tm.theme.buttonText)
+                    .foregroundColor(tm.theme.text)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
 
@@ -141,7 +155,7 @@ private extension HomeView {
             if UserDefaults.standard.integer(forKey: "practiceBest") > 0 {
                 Text("Practice PB: \(UserDefaults.standard.integer(forKey: "practiceBest")) pts")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(tm.theme.text)
             }
             
             /* ── Streak & XP ── */
@@ -149,9 +163,9 @@ private extension HomeView {
                 VStack(spacing: 4) {
                     Text("🔥 Streak \(p.streak)  •  Lv \(p.level)")
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(tm.theme.text)
                     XPBar(xp: p.xp % 300, cap: 300)
-                        .tint(tm.theme.tile)   // optional; bar uses accentColor otherwise
+                        .tint(tm.theme.accent)   // optional; bar uses accentColor otherwise
                 }
                 .padding(.top, 8)
             }
@@ -160,7 +174,7 @@ private extension HomeView {
             switch tag {
             case "daily":
                 GameView(seed: seed, alreadyClearedToday: vm.profile?.playedTodayIL() == true)
-                    .environmentObject(tm)              // ← inject
+                    .environmentObject(tm)
                     .environmentObject(sm)
                     .environmentObject(router)
 
@@ -179,9 +193,9 @@ private extension HomeView {
                 EmptyView()
             }
         }
-        .frame(maxWidth: .infinity,          // ← fills width
-               maxHeight: .infinity,         // ← fills height
-               alignment: .top)              // ← stick to top
+        .frame(maxWidth: .infinity,
+               maxHeight: .infinity,
+               alignment: .top)
         .padding(.horizontal, 32)
     }
 
@@ -282,8 +296,42 @@ struct LevelUpBanner: View {
 
 extension PlayerProfile {
     func playedTodayIL() -> Bool {
-        var cal = Calendar(identifier: .gregorian); cal.timeZone = ILTime.tz
+        let cal  = ILTime.cal
         let last = Date(timeIntervalSince1970: TimeInterval(lastPlayed.seconds))
-        return cal.isDate(last, inSameDayAs: Date())
+        return cal.isDate(last, inSameDayAs: ILTime.startOfToday())
+    }
+}
+
+extension Theme {
+    var requiredLevel: Int? {
+        switch self {
+        case .classic: return nil
+        case .dusk:    return ThemeGate.dusk
+        case .neon:    return ThemeGate.neon
+        }
+    }
+}
+
+struct ToastBanner: View {
+    let message: String
+    @State private var visible = true
+
+    var body: some View {
+        if visible {
+            Text(message)
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.black.opacity(0.85))
+                .clipShape(Capsule())
+                .padding(.bottom, 24)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .onAppear {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                        withAnimation { visible = false }
+                    }
+                }
+        }
     }
 }

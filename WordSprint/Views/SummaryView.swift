@@ -1,50 +1,49 @@
-//
-//  SummaryView.swift
-//  WordSprint
-//
-//  Created by daniel raby on 14/07/2025.
-//
-
-
 import SwiftUI
 
 struct SummaryView: View {
     let score: Int
     let words: [String]
-    @EnvironmentObject private var tm: ThemeManager
-    @Environment(\.dismiss) private var dismiss
     let onHome: () -> Void
 
+    @EnvironmentObject private var tm: ThemeManager
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("Time’s Up!").font(.largeTitle).bold()
-            Text("Score: \(score)").font(.title)
+            Text("Time’s Up!")
+                .font(.largeTitle).bold()
+                .foregroundColor(tm.theme.text)
 
-            List(words, id: \.self) { Text($0) }
+            Text("Score: \(score)")
+                .font(.title)
+                .foregroundColor(tm.theme.text)
+
+            List(words, id: \.self) {
+                Text($0).foregroundColor(tm.theme.text)
+            }
+            .scrollContentBackground(.hidden)
+            .background(tm.theme.listBG)
 
             NavigationLink("Leaderboard") {
                 LeaderboardView()
                     .environmentObject(tm)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(ThemedButtonStyle(prominent: true))
         }
         .padding()
+        .background(tm.theme.background.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
-                    onHome() 
+                    onHome()
                 } label: {
                     HStack {
                         Image(systemName: "chevron.left")
                         Text("Home")
                     }
                 }
+                .foregroundColor(tm.theme.accent)
             }
         }
-
-        }
-
     }
-
+}

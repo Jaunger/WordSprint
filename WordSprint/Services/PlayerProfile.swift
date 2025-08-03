@@ -76,7 +76,8 @@ struct LevelUpResult {
 extension Notification.Name {
     static let leveledUp = Notification.Name("leveledUp")
     static let xpChanged  = Notification.Name("xpChanged")
-    
+    static let scoreSubmitted = Notification.Name("scoreSubmitted")
+
 }
 
 
@@ -84,6 +85,7 @@ enum XPService {
 
     static func award(_ grant: XPGrant, to nick: String) async -> LevelUpResult? {
         do {
+            print("grant" + String(describing: grant))
             // 1) Load current profile
             var profile = try await ProfileService.load(for: nick)
             let oldLevel = profile.level
@@ -120,6 +122,7 @@ enum XPService {
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .xpChanged, object: nil)
                 if newLevel > oldLevel {
+                    print("→ posting leveledUp new=\(newLevel)")
                     NotificationCenter.default.post(name: .leveledUp,
                                                     object: nil,
                                                     userInfo: ["old": oldLevel, "new": newLevel])

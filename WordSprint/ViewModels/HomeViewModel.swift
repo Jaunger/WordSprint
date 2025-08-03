@@ -16,12 +16,22 @@ final class HomeViewModel : ObservableObject{
     private(set) var seedError: String?
     private var loadingProfile: Bool = false
     private var didLoadProfile: Bool = false
+    var pendingLevelUp: Int?
     var profile: PlayerProfile?
 
     init() {
         Task { await fetchSeed()}
             Task { await loadProfile(force: true) }
         
+        NotificationCenter.default.addObserver(
+            forName: .leveledUp,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            if let new = note.userInfo?["new"] as? Int {
+                self?.pendingLevelUp = new
+            }
+        }
     }
     
     

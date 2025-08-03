@@ -115,18 +115,47 @@ enum FSService {
     
 
     /// Deterministic 16-letter seed for a given date
-    static func dailySeedString(for date: Date) -> String {
-        let id = dayFormatter.string(from: date)                 // yyyyMMdd
-        let arc4 = GKARC4RandomSource(seed: id.data(using: .utf8)!)
-        // Use tunedPlayableSeed with deterministic ARC4
-        return playableSeed(using: arc4,
-                                 attempts: 110,
-                                 earlyAcceptWordCount: 32)
+    static func dailySeedString(for date: Date = Date()) -> String {
+        // Normalize the date to IL midnight so every client agrees on “today”
+        let startOfILDay = ILTime.cal.startOfDay(for: date)
+        let id = ilDayFormatter.string(from: startOfILDay)
+
+        let arc4 = GKARC4RandomSource(seed: Data(id.utf8))
+
+        return playableSeed(using: arc4)
     }
-    
 
 }
 
+/// Quick console dump of a seed + the words it contains.
+func debugDumpSeed(_ seed: String, depthLimit: Int? = nil, limit: Int = 80) {
+    let all: [String]
+    if let depthLimit {
+        all = Array(WordFinder.shared.words(in: seed, depthLimit: depthLimit))
+    } else {
+        all = Array(WordFinder.shared.words(in: seed))
+    }
+
+    let sorted = all.sorted { ($0.count, $0) > ($1.count, $1) } // longest first
+    let long   = all.filter { $0.count >= 5 }.count
+    let avgLen = all.isEmpty ? 0 :
+        Double(all.reduce(0) { $0 + $1.count }) / Double(all.count)
+
+    print("🧩 Seed: \(seed)")
+    print("   words: \(all.count), long(>=5): \(long), avgLen: \(String(format: "%.2f", avgLen))")
+    print("   top \(min(limit, sorted.count)) words:")
+    for w in sorted.prefix(limit) {
+        print("     • \(w)")
+    }
+    
+}
+
+private let ilDayFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "yyyyMMdd"
+    f.timeZone   = ILTime.tz          // ← Israel TZ, not device TZ
+    return f
+}()
 private let dayFormatter: DateFormatter = {
     let f = DateFormatter()
     f.dateFormat = "yyyyMMdd"

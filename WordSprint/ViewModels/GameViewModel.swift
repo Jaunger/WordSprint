@@ -58,7 +58,7 @@ class GameViewModel {
     private(set) var isPractice = false
     var timeLeft: Int = 90
     private(set) var isFinished = false
-    private var timer: Timer?
+    private(set) var timer: Timer?
     deinit { stopTimer() }
     var suppressFinishEffects = false
     
@@ -111,7 +111,6 @@ class GameViewModel {
         guard !isFinished else { return }
         let word = currentWord
         let valid = DictionaryService.isValid(word)
-        print("Attempt submit:", word, "valid?", valid)
 
         guard word.count >= 3, valid, !accepted.contains(word) else {
             selected.removeAll()
@@ -161,7 +160,6 @@ class GameViewModel {
         guard !isFinished else { return }
         if timeLeft > 1 {
             timeLeft -= 1
-            print(timeLeft)
         } else {
             stopTimer()
             finishGame()
@@ -189,13 +187,15 @@ class GameViewModel {
         
         Task {
             let nick = Nickname.current
+            if !isPractice {
+                let dailyGrant = XPGrant(amount: score * 10, key: "daily")
+                _ = await XPService.award(dailyGrant, to: nick)
 
-
-
-            let dailyGrant   = XPGrant(amount:  score * 10, key: "daily")
-
-            // ---- XP AWARD GOES HERE ----
-            _ = await XPService.award(dailyGrant, to: nick)
+                try? await FSService.submitScore(score, nick: nick)
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .scoreSubmitted, object: nil)
+                }
+            }
         }
         LocalNotifs.scheduleNextDailyReminder()
         stopTimer()

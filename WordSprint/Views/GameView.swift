@@ -11,6 +11,9 @@ enum Haptics {
     static func error()   { notify.notificationOccurred(.error) }
 }
 
+import SwiftUI
+import Combine
+
 struct GameView: View {
     // MARK: - State
     @State private var viewModel: GameViewModel
@@ -29,14 +32,13 @@ struct GameView: View {
     // MARK: - Inits
     init(seed: GridSeed, alreadyClearedToday: Bool = false) {
         let vm = GameViewModel(seed: seed)
-        if alreadyClearedToday { vm.freeze() }          // timer never runs
+        if alreadyClearedToday { vm.freeze() }
         _viewModel        = State(wrappedValue: vm)
         _alreadyDoneToday = State(initialValue: alreadyClearedToday)
     }
     init(seed: GridSeed) {
         _viewModel = State(wrappedValue: GameViewModel(seed: seed))
     }
-
     init(viewModel: GameViewModel) {
         _viewModel = State(wrappedValue: viewModel)
     }
@@ -57,13 +59,14 @@ struct GameView: View {
 
     // MARK: - Body
     var body: some View {
-        ZStack {                                  // ← allows overlay
+        ZStack {
             VStack(spacing: 12) {
 
                 if !isLoadingPractice {
                     Text("Time: \(viewModel.timeLeft)")
                         .font(.title2)
                         .monospacedDigit()
+                        .foregroundColor(tm.theme.text)
                         .transition(.opacity)
                 }
 
@@ -75,7 +78,7 @@ struct GameView: View {
                                 .controlSize(.large)
                             Text("Optimizing letters for playable words")
                                 .font(.footnote)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(tm.theme.text.opacity(0.6))
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .transition(.opacity)
@@ -125,6 +128,7 @@ struct GameView: View {
                     HStack {
                         Text(viewModel.currentWord)
                             .font(.title2)
+                            .foregroundColor(tm.theme.text)
                             .padding(.leading)
                             .animation(.default, value: viewModel.currentWord)
                         Spacer()
@@ -132,7 +136,7 @@ struct GameView: View {
                             viewModel.submit()
                             Haptics.rigid.impactOccurred()
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(ThemedButtonStyle(prominent: true, fullWidth: false))
                         .disabled(viewModel.isFinished || alreadyDoneToday)
                     }
                     .transition(.opacity)
@@ -145,6 +149,7 @@ struct GameView: View {
                             ForEach(viewModel.accepted, id: \.self) { w in
                                 Text(w)
                                     .font(.body.monospaced())
+                                    .foregroundColor(tm.theme.text)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .transition(.opacity.combined(with: .scale))
                             }
@@ -158,6 +163,7 @@ struct GameView: View {
                 if !isLoadingPractice {
                     Text("Score: \(viewModel.score)")
                         .font(.headline)
+                        .foregroundColor(tm.theme.text)
                         .transition(.opacity)
                 }
 
@@ -177,11 +183,14 @@ struct GameView: View {
             .soundToolbarItem()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading){
-                    Button { dismiss() } label: {
+                    Button {
+                        dismiss()
+                    } label: {
                         HStack {
                             Image(systemName: "chevron.left")
                             Text("Home")
                         }
+                        .foregroundColor(tm.theme.accent)
                     }
                 }
                 if let practiceVM = viewModel as? PracticeGameViewModel {
@@ -192,6 +201,7 @@ struct GameView: View {
                         } label: {
                             Image(systemName: "arrow.triangle.2.circlepath")
                         }
+                        .foregroundColor(tm.theme.accent)
                         .disabled(practiceVM.loadingSeed)
                         .help("Generate a new practice board")
                     }
@@ -205,38 +215,38 @@ struct GameView: View {
                     countdownCancellable = Timer.publish(every: 1, on: .main, in: .common)
                         .autoconnect()
                         .sink { _ in secsLeft = ILTime.secondsUntilTomorrow() }
-                    
                 }
             }
             .onDisappear {
                 countdownCancellable?.cancel()
-                viewModel.stopTimer()    // ensure nothing keeps ticking
+                viewModel.stopTimer()
             }
             .onChange(of: viewModel.showSummary) { _, nowShown in
-                if nowShown { viewModel.stop() } 
+                if nowShown { viewModel.stop() }
             }
 
-            /* ───────── Overlay when daily already played ───────── */
+            // ───────── Overlay when daily already played ─────────
             if alreadyDoneToday {
                 VStack(spacing: 12) {
                     Text("You already cleared today's puzzle!")
                         .font(.headline)
+                        .foregroundColor(tm.theme.text)
                     Text("Come back in \(hhmmss(secsLeft))")
                         .font(.subheadline)
+                        .foregroundColor(tm.theme.text.opacity(0.8))
                         .monospacedDigit()
                     Button("Back to Home") {
                         dismiss()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(ThemedButtonStyle(prominent: true))
                 }
                 .padding(24)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
                 .shadow(radius: 8)
                 .onChange(of: secsLeft) { _, newValue in
                     if newValue <= 0 {
-                        // new Israeli day rolled in – let Home fetch a fresh seed
                         countdownCancellable?.cancel()
-                        dismiss()   // pop to Home, which will refetch
+                        dismiss()
                     }
                 }
             }
@@ -253,12 +263,11 @@ private struct TileView: View {
     var body: some View {
         Text(String(char))
             .font(.title.weight(.bold))
-            .foregroundColor(highlighted ? .white :
-                             (tm.theme == .classic ? .primary : tm.theme.tile))
+            .foregroundColor(highlighted ? .white : tm.theme.text)
             .frame(width: 70, height: 70)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(highlighted ? tm.theme.tile : tm.theme.tile.opacity(0.12))
+                    .fill(highlighted ? tm.theme.tileHighlight : tm.theme.tile.opacity(0.12))
             )
             .shadow(radius: 2, y: 1)
             .animation(.easeInOut(duration: 0.12), value: highlighted)
