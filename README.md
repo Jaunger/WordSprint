@@ -37,7 +37,13 @@ A daily word-finding game built with SwiftUI and Firebase, inspired by Boggle-st
 
 ## 📱 Screenshots
 
-*[Screenshots will be added here]*
+
+<img width="1170" height="2532" alt="IMG_3357" src="https://github.com/user-attachments/assets/a785f134-c3e8-4840-af7b-6f572faccef5" />
+<img width="1170" height="2532" alt="IMG_3356" src="https://github.com/user-attachments/assets/ca4fc4cf-61c2-4b30-b39d-c928b9b7bda4" />
+<img width="1170" height="2532" alt="IMG_3354" src="https://github.com/user-attachments/assets/13d2a02d-b5e2-4efe-8238-962e4fcf57f3" />
+<img width="1170" height="2532" alt="IMG_3353" src="https://github.com/user-attachments/assets/f5c98018-a085-45bc-b4bd-1f3c7f1e3381" />
+<img width="1170" height="2532" alt="IMG_3352" src="https://github.com/user-attachments/assets/1d86ed4f-7b4b-4507-b233-3f38e4537891" />
+<img width="1170" height="2532" alt="IMG_3351" src="https://github.com/user-attachments/assets/a20f1f16-abbf-4b21-911a-92620a04c3c8" />
 
 ### Game Screenshots
 - **Home Screen**: Daily puzzle access, practice mode, leaderboards
